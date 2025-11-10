@@ -16,7 +16,7 @@ uint8_t serverMac[] = {0xe4,0x65,0xb8,0x26,0x30,0x28};
 Message msg;
 
 // Callback statusu wysyłki
-void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
+void OnDataSent(const void *mac_addr, esp_now_send_status_t status) {
   Serial.print("Send Status: ");
   Serial.println(status == ESP_NOW_SEND_SUCCESS ? "Success" : "Fail");
 }
@@ -41,7 +41,8 @@ void setup() {
     return;
   }
 
-  esp_now_register_send_cb(OnDataSent);
+  
+  esp_now_register_send_cb((esp_now_send_cb_t)OnDataSent);
 
   // dodaj serwer jako peer
   esp_now_peer_info_t peerInfo = {};
