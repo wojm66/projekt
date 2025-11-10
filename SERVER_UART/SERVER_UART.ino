@@ -1,5 +1,6 @@
 #include <esp_now.h>
 #include <WiFi.h>
+#include <set>
 #include <vector>
 #include <Wire.h>
 #include <Adafruit_Sensor.h>
@@ -10,10 +11,10 @@
 // ===== LCD =====
 int lcdColumns = 20;
 int lcdRows = 4;
-LiquidCrystal_I2C lcd(0x27, lcdColumns, lcdRows);  // deklaracja globalna
+LiquidCrystal_I2C lcd(0x27, lcdColumns, lcdRows);
 
 // ===== Rotacja ekranów =====
-int displayIndex = 0; 
+int displayIndex = 0;
 unsigned long lastUpdate = 0;
 const unsigned long interval = 3000; // ms
 
@@ -24,8 +25,10 @@ struct AHT20Message {
 };
 
 #define DEVICE_TIMEOUT_MS 5000
+
 struct DeviceData {
   uint8_t mac[6];
+  uint64_t long_mac;
   int id;
   float temperature;
   float humidity;
@@ -33,7 +36,13 @@ struct DeviceData {
   bool active;
 };
 
-std::vector<DeviceData> devices;
+struct DeviceDataComparator {
+  bool operator()(const DeviceData& lhs, const DeviceData& rhs) const {
+    return lhs.long_mac < rhs.long_mac;
+  }
+};
+
+std::set<DeviceData, DeviceDataComparator> new_devices;
 int nextID = 1;
 
 // ===== Czujniki lokalne =====
@@ -49,63 +58,39 @@ int pm1_0 = 0;
 int pm2_5 = 0;
 int pm10  = 0;
 
-// ===== Funkcje pomocnicze =====
-bool compareMac(const uint8_t *mac1, const uint8_t *mac2) {
-  return memcmp(mac1, mac2, 6) == 0;
-}
 
-int findDeviceIndex(const uint8_t *mac) {
-  for (size_t i = 0; i < devices.size(); i++) {
-    if (compareMac(devices[i].mac, mac)) return i;
-  }
-  return -1;
-}
-
-// Callback odbioru ESP-NOW 
-void OnDataRecv(const esp_now_recv_info *info, const uint8_t *incomingData, int len) {
-  if (len != sizeof(AHT20Message)) {
-    return;
-  }
-
-  AHT20Message msg;
-  memcpy(&msg, incomingData, sizeof(msg));
-  const uint8_t *mac = info->src_addr;
-
-  int idx = findDeviceIndex(mac);
-  if (idx == -1) {
-    DeviceData dev;
-    memcpy(dev.mac, mac, 6);
-    dev.id = nextID++;
-    dev.temperature = msg.temperature;
-    dev.humidity = msg.humidity;
-    dev.lastSeen = millis();
-    dev.active = true;
-    devices.push_back(dev);
-  } else {
-    devices[idx].temperature = msg.temperature;
-    devices[idx].humidity = msg.humidity;
-    devices[idx].lastSeen = millis();
-    devices[idx].active = true;
-  }
-}
-
-// ===== Wysyłanie przez UART0 =====
-unsigned long uartLastSend = 0;
-const unsigned long uartInterval = 2000; // co 2s
-
-void sendUartFrame() {
-  uint8_t frame[128];
+// ===== Wysyłanie ramki dla czujnika zdalnego =====
+void sendUartFrameRemote(const DeviceData& dev) {
+  uint8_t frame[16];
   int pos = 0;
 
-  // Nagłówek
   frame[pos++] = 0xAA;
   frame[pos++] = 0x55;
+  frame[pos++] = dev.id;
+  frame[pos++] = (uint8_t)((millis() - dev.lastSeen < DEVICE_TIMEOUT_MS) ? 1 : 0); // ACTIVE!
+  
+  int16_t temp = (int16_t)(dev.temperature * 100);
+  int16_t hum = (int16_t)(dev.humidity * 100);
+  memcpy(frame+pos, &temp, 2); pos +=2;
+  memcpy(frame+pos, &hum, 2);  pos +=2;
 
-  // Dane stacji bazowej
+  Serial.write(frame, pos);
+}
+
+
+// ===== Wysyłanie ramki dla stacji bazowej =====
+void sendUartFrameBase() {
+  uint8_t frame[32];
+  int pos = 0;
+
+  frame[pos++] = 0xBB;
+  frame[pos++] = 0x66;
+
   int16_t t_bme = (int16_t)(bme.readTemperature() * 100);
   int16_t h_bme = (int16_t)(bme.readHumidity() * 100);
-  int16_t p_bme = (int16_t)(bme.readPressure() / 10.0F); // <--- POPRAWIONE! hPa x10 (10132 dla 1013.2 hPa)
+  int16_t p_bme = (int16_t)(bme.readPressure() / 10.0F);
   int16_t a_bme = (int16_t)(bme.readAltitude(SEALEVELPRESSURE_HPA) * 100);
+
   uint16_t pm1 = (uint16_t)pm1_0;
   uint16_t pm25 = (uint16_t)pm2_5;
   uint16_t pm10v = (uint16_t)pm10;
@@ -118,25 +103,51 @@ void sendUartFrame() {
   memcpy(frame+pos, &pm25, 2);   pos+=2;
   memcpy(frame+pos, &pm10v, 2);  pos+=2;
 
-  // Liczba czujników zdalnych
-  uint8_t count = devices.size() > 4 ? 4 : devices.size();
-  frame[pos++] = count;
-
-  // Dane do 4 czujników zdalnych
-  unsigned long now = millis();
-  for (int i=0; i<count; i++) {
-    DeviceData &dev = devices[i];
-    frame[pos++] = dev.id;
-    frame[pos++] = (uint8_t)((now - dev.lastSeen < DEVICE_TIMEOUT_MS) ? 1 : 0);
-    int16_t temp = (int16_t)(dev.temperature * 100);
-    int16_t hum = (int16_t)(dev.humidity * 100);
-    memcpy(frame+pos, &temp, 2); pos +=2;
-    memcpy(frame+pos, &hum, 2);  pos +=2;
-  }
-
-  Serial.write(frame, pos); // wysyłka przez UART0 (TX0)
+  Serial.write(frame, pos);
 }
 
+// Callback odbioru ESP-NOW 
+void OnDataRecv(const esp_now_recv_info *info, const uint8_t *incomingData, int len) {
+  if (len != sizeof(AHT20Message)) {
+    return;
+  }
+
+  AHT20Message msg;
+  memcpy(&msg, incomingData, sizeof(msg));
+  const uint8_t *mac = info->src_addr;
+  const uint64_t mac_long = 0x0000ffffffffffff & *((uint64_t*)(info->src_addr));
+
+  DeviceData temp;
+  memcpy(temp.mac, mac, 6);
+  temp.long_mac = mac_long;
+
+  // Sprawdź, czy urządzenie już jest zarejestrowane
+  auto it = new_devices.find(temp);
+
+  DeviceData d;
+  memcpy(d.mac, mac, 6);
+  d.long_mac = mac_long;
+  d.temperature = msg.temperature;
+  d.humidity = msg.humidity;
+  d.lastSeen = millis();
+  d.active = true;
+
+  if (it == new_devices.end()) {
+    // Nie istnieje urządzenie – nowe id
+    d.id = nextID++;
+    new_devices.insert(d);
+  } else {
+    // Już jest – zachowaj stare id
+    d.id = it->id;
+    new_devices.erase(it);
+    new_devices.insert(d);
+  }
+
+  sendUartFrameRemote(d); // Wysłanie ramki zaraz po odebraniu zdalnych danych
+}
+
+unsigned long uartLastSend = 0;
+const unsigned long uartInterval = 2000; // co 2s
 
 void setup() {
   Serial.begin(9600); // UART0, TX0=GPIO1, RX0=GPIO3
@@ -181,7 +192,15 @@ void loop() {
     lcd.clear();
     delay(50);
 
-    int totalScreens = 1 + devices.size();
+    // Tworzymy listę tylko aktywnych czujników
+    std::vector<DeviceData> activeDevices;
+    for (const auto& d : new_devices) {
+      if (now - d.lastSeen < DEVICE_TIMEOUT_MS) {
+        activeDevices.push_back(d);
+      }
+    }
+
+    int totalScreens = 1 + activeDevices.size();
 
     if (displayIndex == 0) {
       lcd.setCursor(0,0);
@@ -207,8 +226,9 @@ void loop() {
       lcd.print(" PM10:");
       lcd.print(pm10);
 
-    } else {
-      DeviceData d = devices[displayIndex-1];
+    } else if (!activeDevices.empty()) {
+      // Wyświetlanie tylko aktywnych urządzeń
+      DeviceData d = activeDevices[displayIndex-1];
 
       lcd.setCursor(0,0);
       lcd.print("AHT20 zdalne");
@@ -228,7 +248,7 @@ void loop() {
       lcd.print("Stacja ");
       lcd.print(displayIndex);
       lcd.print("/");
-      lcd.print(devices.size());
+      lcd.print(activeDevices.size());
     }
 
     displayIndex++;
@@ -237,7 +257,7 @@ void loop() {
 
   // ===== RAMKA UART0 =====
   if (millis() - uartLastSend > uartInterval) {
-    sendUartFrame();
+    sendUartFrameBase();      // wysyłka bazy co 2s
     uartLastSend = millis();
   }
 }
