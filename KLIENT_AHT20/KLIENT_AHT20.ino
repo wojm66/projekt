@@ -1,19 +1,17 @@
 #include "DFRobot_AHT20.h"
 #include <esp_now.h>
 #include <WiFi.h>
+#include <HiveFrames.h>
 
 DFRobot_AHT20 aht20;
 
 // Struktura do wysyłki
-struct Message {
-  float temperature;
-  float humidity;
-};
+
 
 // Adres MAC serwera – wpisz tutaj odbiornik!
 uint8_t serverMac[] = {0xe4,0x65,0xb8,0x26,0x30,0x28};  
 
-Message msg;
+HiveData msg;
 
 // Callback statusu wysyłki
 void OnDataSent(const void *mac_addr, esp_now_send_status_t status) {
@@ -60,8 +58,8 @@ void setup() {
 
 void loop() {
   if (aht20.startMeasurementReady(true)) {
-    msg.temperature = aht20.getTemperature_C();
-    msg.humidity = aht20.getHumidity_RH();
+    msg.temperature = (uint16_t)(100*aht20.getTemperature_C());
+    msg.humidity = (int16_t)(10*aht20.getHumidity_RH());
 
     Serial.print("Sending: ");
     Serial.print(msg.temperature);
