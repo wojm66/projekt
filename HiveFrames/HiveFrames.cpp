@@ -56,7 +56,7 @@
     }
 
     void HiveFrame::print(){
-        Serial.printf("header: %4.x\n",header);
+        Serial.printf("header: %.4x\n",header);
         if(header=0xAA55){
             Serial.printf("hive %d\n", payload.hive.id);
             Serial.printf("hive %d\n",payload.hive.active);

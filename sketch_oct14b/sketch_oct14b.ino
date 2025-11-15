@@ -1,51 +1,25 @@
 #include <Arduino.h>
 #include <WiFi.h>
-#include <ESPAsyncWebServer.h>
 #include <ESPmDNS.h>
-#include <ArduinoJson.h>
-#include "rbuffor.h"
+#include <BaseStation.h>
+#include <rbuffor.h>
 #include <HiveFrames.h>
-#include "MAIN_html.h"
+#include <RemoteNode.h>
+#include <Bufor.h>
+#include "setupWebServer.h"
 
 // Konfiguracja Wi-Fi
-const char* ssid = "linksys__2";
-const char* password = "tylkodladomu";
+const char* ssid = "Arudim";
+const char* password = "pies1233";
 
 // UART2 – RX2=16, TX2=17
 HardwareSerial uart(2);
 
-#define MAX_REMOTE 4
+extern Bufor remotes[MAX_REMOTE];
 
-// Struktury danych
-struct RemoteNode {
-  uint8_t id;
-  uint8_t active;
-  int16_t temperature;
-  int16_t humidity;
-  unsigned long timestamp;
-  constexpr RemoteNode(uint8_t id_=0, uint8_t active_=0, int16_t temp_=0, int16_t hum_=0, unsigned long ts_=0)
-    : id(id_), active(active_), temperature(temp_), humidity(hum_), timestamp(ts_) {}
-};
 
-constexpr RemoteNode dummy{};
-rbufor<RemoteNode,10,dummy> remotes[MAX_REMOTE];
-rbufor<RemoteNode,40,dummy> buforRotacyjny;
-
-struct BaseStation {
-  int16_t temperature;
-  int16_t humidity;
-  int16_t pressure;
-  int16_t altitude;
-  uint16_t pm1_0;
-  uint16_t pm2_5;
-  uint16_t pm10;
-};
 BaseStation base;
 uint8_t remoteCount = 0;
-
-AsyncWebServer server(80);
-
-
 
 void setupWiFi() {
   WiFi.begin(ssid, password);
@@ -110,137 +84,6 @@ HiveFrame handleUART(){
   }
   return frame;
 }
-void handleUART_() {
-  unsigned long now = millis();
-  unsigned long startTime = now;
-  
-  while (uart.available() >= 2 && (millis() - startTime < 50)) {
-    int marker1 = uart.peek();
-    
-    if (marker1 == 0xAA) {
-      if (uart.available() >= 8) {
-        uart.read();
-        if (uart.read() == 0x55) {
-          uint8_t id = uart.read();
-          uint8_t active = uart.read();
-          int16_t temp, hum;
-          uart.readBytes((char*)&temp, 2);
-          uart.readBytes((char*)&hum, 2);
-          if (id > 0 && id <= MAX_REMOTE) {
-            RemoteNode node(id, active, temp, hum, now);
-            remotes[id-1].dodaj(node);
-            buforRotacyjny.dodaj(node);
-          }
-        }
-        continue;
-      } else {
-        break;
-      }
-    }
-    else if (marker1 == 0xBB) {
-      int minBaseFrameLen = 2 + 14 + 1;
-      if (uart.available() >= minBaseFrameLen) {
-        uart.read();
-        if (uart.read() == 0x66) {
-          uart.readBytes((char*)&base.temperature, 2);
-          uart.readBytes((char*)&base.humidity, 2);
-          uart.readBytes((char*)&base.pressure, 2);
-          uart.readBytes((char*)&base.altitude, 2);
-          uart.readBytes((char*)&base.pm1_0, 2);
-          uart.readBytes((char*)&base.pm2_5, 2);
-          uart.readBytes((char*)&base.pm10, 2);
-          remoteCount = uart.read();
-          int neededRemoteBytes = remoteCount * 6;
-          if (uart.available() >= neededRemoteBytes) {
-            for (int i=0; i<remoteCount && i<MAX_REMOTE; ++i) {
-              uint8_t id = uart.read();
-              uint8_t active = uart.read();
-              int16_t temp, hum;
-              uart.readBytes((char*)&temp, 2);
-              uart.readBytes((char*)&hum, 2);
-              if (id > 0 && id <= MAX_REMOTE) {
-                RemoteNode node(id, active, temp, hum, now);
-                remotes[id-1].dodaj(node);
-                buforRotacyjny.dodaj(node);
-              }
-            }
-          }
-        }
-        continue;
-      } else {
-        break;
-      }
-    }
-    else {
-      uart.read();
-    }
-  }
-}
-
-void setupWebServer() {
-  server.on("/", HTTP_GET, [](AsyncWebServerRequest *req){
-    req->send_P(200, "text/html", MAIN_html);
-  });
-
-  server.on("/data.json", HTTP_GET, [](AsyncWebServerRequest *req){
-    DynamicJsonDocument doc(1024);
-    doc["base"]["temperature"] = base.temperature / 100.0;
-    doc["base"]["humidity"] = base.humidity / 100.0;
-    doc["base"]["pressure"] = base.pressure / 10.0;
-    doc["base"]["altitude"] = base.altitude ;
-    doc["base"]["pm1_0"] = base.pm1_0;
-    doc["base"]["pm2_5"] = base.pm2_5;
-    doc["base"]["pm10"] = base.pm10;
-    JsonArray nodes = doc.createNestedArray("remotes");
-    for (int i = 0; i < MAX_REMOTE; i++) {
-      bool wasData = remotes[i].size() > 0;
-      RemoteNode obj = remotes[i].ostatni();
-      if (wasData && obj.active) {
-        JsonObject n = nodes.createNestedObject();
-        n["id"] = obj.id;
-        n["active"] = 1;
-        n["temperature"] = obj.temperature / 100.0;
-        n["humidity"] = obj.humidity / 10.0;
-      }
-    }
-    String out; 
-    serializeJson(doc, out);
-    AsyncWebServerResponse *response = req->beginResponse(200, "application/json", out);
-    response->addHeader("Cache-Control", "no-cache, no-store, must-revalidate");
-    req->send(response);
-  });
-
-  server.on("/history", HTTP_GET, [](AsyncWebServerRequest *req){
-    if(!req->hasParam("id")){
-      req->send(400, "application/json", "{\"error\":\"missing id\"}");
-      return;
-    }
-    int ulId = req->getParam("id")->value().toInt();
-    if(ulId < 1 || ulId > MAX_REMOTE){
-      req->send(400, "application/json", "{\"error\":\"invalid id\"}");
-      return;
-    }
-    
-    DynamicJsonDocument doc(2048);
-    JsonArray hist = doc.createNestedArray("history");
-    unsigned long now = millis();
-    
-    remotes[ulId-1].reset();
-    RemoteNode node;
-    while((node = remotes[ulId-1].nastepny()).id != 0){
-      JsonObject item = hist.createNestedObject();
-      item["temperature"] = node.temperature / 100.0;
-      item["humidity"] = node.humidity / 100.0;
-      item["secondsAgo"] = (now - node.timestamp) / 1000; // Ile sekund temu
-    }
-    
-    String out;
-    serializeJson(doc, out);
-    req->send(200, "application/json", out);
-  });
-
-  server.begin();
-}
 
 void setup() {
   Serial.begin(115200);
@@ -254,8 +97,8 @@ void loop() {
   HiveFrame frame = handleUART();
   if(frame.isHive()){
             RemoteNode node(frame.payload.hive.id, frame.payload.hive.active, frame.payload.hive.local.temperature, frame.payload.hive.local.humidity, millis());
-            remotes[frame.payload.hive.id-1].dodaj(node);
-            buforRotacyjny.dodaj(node);
+            remotes[frame.payload.hive.id-1].Add(node);
+            
   }
   if(frame.isMeteo()){
           base.temperature=frame.payload.meteo.t_bme;
