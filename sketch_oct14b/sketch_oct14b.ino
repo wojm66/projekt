@@ -98,13 +98,13 @@ void loop() {
   if(frame.isHive()){
       //Serial.printf(frame.isHive()?"HIVE ID: %d\n":"", frame.payload.hive.id);
             RemoteNode node(frame.payload.hive.id, frame.payload.hive.active, frame.payload.hive.local.temperature, frame.payload.hive.local.humidity, millis());
-            for (int i = 0; i < MAX_REMOTE; i++) {
+            /*for (int i = 0; i < MAX_REMOTE; i++) {
       Serial.printf("-- U: %d , i: %d, c: %d\n", node.id, i,remotes[i].Size());
-            }
+            }*/
             remotes[frame.payload.hive.id-1].Add(node);
-            for (int i = 0; i < MAX_REMOTE; i++) {
+            /*for (int i = 0; i < MAX_REMOTE; i++) {
       Serial.printf("U: %d , i: %d, c: %d\n", node.id, i,remotes[i].Size());
-            }
+            }*/
             
   }
   if(frame.isMeteo()){

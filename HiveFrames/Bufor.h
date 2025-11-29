@@ -9,6 +9,6 @@ class Bufor{
     const RemoteNode& Last();
     void Add(RemoteNode);
     void Reset();
-    const RemoteNode& Next();
+    const RemoteNode Next();
 
 };

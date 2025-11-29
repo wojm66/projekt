@@ -20,7 +20,7 @@ public:
         return N - (start - stop);
   }
 
-  const T& nastepny()
+  const T nastepny()
   {
     if(iterator>=0)
       {

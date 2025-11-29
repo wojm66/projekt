@@ -65,8 +65,7 @@ void setupWebServer() {
     
     remotes[ulId-1].Reset();
     RemoteNode node;
-    Serial.printf("server.on : node.id = %d\n", node.id);
-    while((node = remotes[ulId-1].Next()).id != 0){
+    while( (node = remotes[ulId-1].Next()).id != 0 ){
       JsonObject item = hist.createNestedObject();
       item["temperature"] = node.temperature / 100.0;
       item["humidity"] = node.humidity / 10.0;

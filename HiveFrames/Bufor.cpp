@@ -21,6 +21,6 @@ void Bufor::Add(RemoteNode r){
 void Bufor::Reset(){
     _buforRotacyjny.reset();
 }
-const RemoteNode& Bufor::Next(){
-    _buforRotacyjny.nastepny();
+const RemoteNode Bufor::Next(){
+   return _buforRotacyjny.nastepny();
 }
