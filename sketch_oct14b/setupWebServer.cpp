@@ -29,6 +29,7 @@ void setupWebServer() {
     doc["base"]["pm10"] = base.pm10;
     JsonArray nodes = doc.createNestedArray("remotes");
     for (int i = 0; i < MAX_REMOTE; i++) {
+      //Serial.printf("i: %d, c: %d\n", i, remotes[i].Size());
       bool wasData = remotes[i].Size() > 0;
       RemoteNode obj = remotes[i].Last();
       if (wasData && obj.active) {
@@ -52,6 +53,7 @@ void setupWebServer() {
       return;
     }
     int ulId = req->getParam("id")->value().toInt();
+    Serial.printf("Ul id : %d\n",ulId);
     if(ulId < 1 || ulId > MAX_REMOTE){
       req->send(400, "application/json", "{\"error\":\"invalid id\"}");
       return;
@@ -63,6 +65,7 @@ void setupWebServer() {
     
     remotes[ulId-1].Reset();
     RemoteNode node;
+    Serial.printf("server.on : node.id = %d\n", node.id);
     while((node = remotes[ulId-1].Next()).id != 0){
       JsonObject item = hist.createNestedObject();
       item["temperature"] = node.temperature / 100.0;

@@ -1,10 +1,10 @@
 #include <Arduino.h>
 #include "RemoteNode.h"
-#include "Bufor.h"
 #include "rbuffor.h"
+#include "Bufor.h"
 
 
-rbufor<RemoteNode,40> _buforRotacyjny;
+
 
 int Bufor::Size(){
     return _buforRotacyjny.size();

@@ -9,8 +9,8 @@
 #include "setupWebServer.h"
 
 // Konfiguracja Wi-Fi
-const char* ssid = "Arudim";
-const char* password = "pies1233";
+const char* ssid = "linksys__2";
+const char* password = "tylkodladomu";
 
 // UART2 – RX2=16, TX2=17
 HardwareSerial uart(2);
@@ -57,7 +57,7 @@ HiveFrame handleUART(){
     if(size>0){
       int size_to_read=size;
       
-      Serial.printf("read_data count %d\n", size);
+      //Serial.printf("read_data count %d\n", size);
       while(size_to_read>0)
       {
         while (uart.available() < size && (millis() - startTime < 100)){
@@ -65,16 +65,16 @@ HiveFrame handleUART(){
       }
         int read_bytes = uart.readBytes((uint8_t*)(buf+(size-size_to_read)),1);
         size_to_read-=read_bytes;
-        Serial.printf("to read_data count %d\n", size-size_to_read);
+        /*Serial.printf("to read_data count %d\n", size-size_to_read);
         for (int i=0;i<sizeof(buf);i++){
           Serial.printf("%.2x,",buf[i]);
         }
-        Serial.println("");
+        Serial.println("");*/
       }
 
       frame=HiveFrame(buf,size);
-      Serial.println(frame.isHive()?"HIVE":"");
-      Serial.println(frame.isMeteo()?"METEO":"");
+//      Serial.println(frame.isHive()?"HIVE":"");
+//      Serial.println(frame.isMeteo()?"METEO":"");
       //frame.print();
     }
     else {
@@ -96,8 +96,15 @@ void loop() {
   
   HiveFrame frame = handleUART();
   if(frame.isHive()){
+      //Serial.printf(frame.isHive()?"HIVE ID: %d\n":"", frame.payload.hive.id);
             RemoteNode node(frame.payload.hive.id, frame.payload.hive.active, frame.payload.hive.local.temperature, frame.payload.hive.local.humidity, millis());
+            for (int i = 0; i < MAX_REMOTE; i++) {
+      Serial.printf("-- U: %d , i: %d, c: %d\n", node.id, i,remotes[i].Size());
+            }
             remotes[frame.payload.hive.id-1].Add(node);
+            for (int i = 0; i < MAX_REMOTE; i++) {
+      Serial.printf("U: %d , i: %d, c: %d\n", node.id, i,remotes[i].Size());
+            }
             
   }
   if(frame.isMeteo()){

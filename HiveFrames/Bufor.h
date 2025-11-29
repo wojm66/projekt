@@ -3,6 +3,7 @@
 
 class Bufor{
     public:
+    rbufor<RemoteNode,40> _buforRotacyjny;
 
     int Size();
     const RemoteNode& Last();
