@@ -1,8 +1,8 @@
-template<typename T,int N, T DUMMY>
+template<typename T,int N>
 class rbufor
 {
 public:
-  rbufor(): dummy(DUMMY),
+  rbufor():
     start(0),
     stop(0),
     iterator(-1)
@@ -20,7 +20,7 @@ public:
         return N - (start - stop);
   }
 
-  const T& nastepny()
+  const T nastepny()
   {
     if(iterator>=0)
       {
@@ -32,7 +32,7 @@ public:
     }
   return tablica[index];
       }
-    return dummy;
+    return T();
   };
 
   void dodaj(T rekord)
@@ -52,7 +52,6 @@ public:
 
 private:
   T tablica[N];
-  const T dummy;
   int start;
   int stop;
   int iterator;
